@@ -1,48 +1,68 @@
 # TOSBI — Instaward 1
 
-Protection Vault + Book contract, signed-quote pricer, and testnet demo for [SOW 1](docs/tosbi-instaward-1-sow.md). Design reference: [Architecture 1 spec](docs/tosbi-architecture-1-spec.md).
+Protection vault, settlement, position binding, risk caps and governance on Soroban, a signed-quote pricer with keeper, and a testnet demo, for [SOW 1](docs/tosbi-instaward-1-sow.md). Design references: [Architecture 1 spec](docs/tosbi-architecture-1-spec.md), [production scope](docs/superpowers/specs/2026-10-15-tosbi-production-scope-design.md).
 
 | SOW deliverable | Where |
 |---|---|
-| 1. Vault + Book Soroban contract | [contracts/protection/src/lib.rs](contracts/protection/src/lib.rs) |
-| 2. Demo page | [pricer/public/index.html](pricer/public/index.html), served with its API by [pricer/src/worker.ts](pricer/src/worker.ts) (Cloudflare Worker) |
-| 3. Pricer bootstrap | [pricer/src/pricing.ts](pricer/src/pricing.ts) (Black–Scholes spreads, loadings), [pricer/src/quote.ts](pricer/src/quote.ts) (ed25519 quote signing), [pricer/scripts/calibrate.ts](pricer/scripts/calibrate.ts) → [pricer/vol-table.json](pricer/vol-table.json) |
-| 4. Tests | [contracts/protection/src/test.rs](contracts/protection/src/test.rs), [pricer/test/](pricer/test/), [pricer/scripts/e2e.ts](pricer/scripts/e2e.ts) |
+| Vault, settlement, position binding, caps | [contracts/protection/src/lib.rs](contracts/protection/src/lib.rs), [oracle.rs](contracts/protection/src/oracle.rs), [position.rs](contracts/protection/src/position.rs) |
+| Governance (roles, pause, timelock) | [contracts/protection/src/governance.rs](contracts/protection/src/governance.rs), [scripts/admin.sh](scripts/admin.sh) |
+| Reference PerpDEX and test oracle | [contracts/mock-perpdex](contracts/mock-perpdex/src/lib.rs), [contracts/mock-oracle](contracts/mock-oracle/src/lib.rs) |
+| Demo page | [pricer/public/index.html](pricer/public/index.html), served with its API by [pricer/src/worker.ts](pricer/src/worker.ts) (Cloudflare Worker) |
+| Pricer | [pricer/src/pricing.ts](pricer/src/pricing.ts), [pricer/src/service.ts](pricer/src/service.ts), [pricer/src/quote.ts](pricer/src/quote.ts), [pricer/scripts/calibrate.ts](pricer/scripts/calibrate.ts) → [pricer/vol-tables/](pricer/vol-tables/) |
+| Keeper, vol-shock, depth | [pricer/src/keeper.ts](pricer/src/keeper.ts), [pricer/src/market.ts](pricer/src/market.ts), [.github/workflows/recalibrate.yml](.github/workflows/recalibrate.yml) |
+| Tests | [contracts/protection/src/test.rs](contracts/protection/src/test.rs) and [test/](contracts/protection/src/test/), [pricer/test/](pricer/test/), [pricer/scripts/e2e.ts](pricer/scripts/e2e.ts) |
 
 ## Testnet deployment
 
-| | |
+| Component | Testnet deployment |
 |---|---|
-| Demo | https://tosbi-demo.dungnd8594.workers.dev |
-| Vault contract | [`CAZXBVORB2QN7V2FHYJFALYDRLBWZGUQDW2GSF3IKGYWFMEVVMZDS4PG`](https://stellar.expert/explorer/testnet/contract/CAZXBVORB2QN7V2FHYJFALYDRLBWZGUQDW2GSF3IKGYWFMEVVMZDS4PG) |
-| Deploy tx | [`0b9d31b1…`](https://stellar.expert/explorer/testnet/tx/0b9d31b109e8161435c228442cb982a026bf47f2eea37c11fe419ba876d820fa) (WASM upload [`786678bb…`](https://stellar.expert/explorer/testnet/tx/786678bbd05178254daa2409035f056bf5ba6d55187a950a80cee580b502d4c9), pool deposit [`3f10f50c…`](https://stellar.expert/explorer/testnet/tx/3f10f50ce998af2f119c0aa84cb0c90eb606e017dbf2afa2aa00639a3ec3fc33)) |
-| Test token | `tUSDC:GCYYOX6T6DSACBQRPFR57HPLCUSRHSBD5QSQ3PWUCEOQ5OVKXPGBATME` (SAC `CD67MJF6JKMWBEPLB7HETWC7OWIHJMA4FMFEMUJYDUR5J4QZMP54YEUZ`) |
-| Pricer public key | `GBHNZIX5RS4QIFAJ2XCMHLS4PKBXQD6QHWLPNA6LG3NH6KVSFMRT7IU4` (raw `4edca2fd8cb9041409d5c4c3ae5c7a83780fd03d96f683cb36da7f2ab22b233f`) |
-| Admin | `GDWUXAO43WEFCTXE2FB2GOI2ODEPGB3RDSVWVG6EKMEMBSB4KGWXZWSM` |
+| Demo | https://tosbi-demo.tosbi-protection.workers.dev |
+| Vault | `CALMXPG35NPERCSU3CAXJXKFC7MRRIRE6DJTKNJFC4ULS3S2QYKCDWGE` |
+| Mock PerpDEX | `CDOB3GIL3U76WUWXISDXKD3D5PRZGI5UJW2626UCTW6MJX5REAA5E3UQ` |
+| Reflector Oracle | `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63` |
+| Test token | `tUSDC:GDOVFRRYEBASHQ5CU6WL37NJXV7TE2LREGQLN7RMEIIA2R3K7DUAZJNB` |
+| Token contract | `CAQ22CN647LQH7HV334WLJBCEJO43C5UJJ3ZBK3UY5WC3EJ3K33Y5F7W` |
+| Admin (2-of-2 multisig) | `GAWJV4LEBJE5MJXJRFLWNUG4JJVBDTRDTD7DYMVC3EDPQ4MVXODD5P5T` |
+| Admin signer 1 (weight 1) | `GBE7CKFVSU2ULKTDA4E5TN3L4OXBUEHO3IS6JM72MAEDWEKZNJQF7W3Y` |
+| Admin signer 2 (weight 1) | `GCUA3ABBERYHJAQOCCUPZFNJIXF4CLJIO6B6RRMPNQ3WPJWE2CFHK4XQ` |
+| Admin thresholds (low / med / high) | `2 / 2 / 2` |
+| Owner | `GCQLZK7NFEUXW2O54W7FAV2LXYWXQEPCU6VTN7PVAYQRRN7FQKLTQ5GJ` |
+| Operator | `GCR6WLZFUVPR7KTO7NT7DK2WMWKUY54EMTPGJPX63VYHQ3FSQMWRCHX7` |
+| Keeper | `GC2TU7G4VMXH6TAAB7VIQWONPBHFC3JTTAK6EWMPUSMLVI2OJCNNE6V2` |
+| Pricer public key (raw hex) | `7b5520caeebcdad507de107fb29048e480f7d8f787f7afded39337d723f47521` |
+| Vault | [`CALMXPG35NPERCSU3CAXJXKFC7MRRIRE6DJTKNJFC4ULS3S2QYKCDWGE`](https://stellar.expert/explorer/testnet/contract/CALMXPG35NPERCSU3CAXJXKFC7MRRIRE6DJTKNJFC4ULS3S2QYKCDWGE) |
+| Mock PerpDEX | [`CDOB3GIL3U76WUWXISDXKD3D5PRZGI5UJW2626UCTW6MJX5REAA5E3UQ`](https://stellar.expert/explorer/testnet/contract/CDOB3GIL3U76WUWXISDXKD3D5PRZGI5UJW2626UCTW6MJX5REAA5E3UQ) |
 
-Pool seeded with 10,000 tUSDC; per-wallet cap 2% of the pool. The demo's spot price comes from Coinbase, then Kraken, then Binance (Binance blocks Cloudflare).
+The testnet Vault enforces capital reservation and per-wallet
+protection limits. Protection settlement uses Reflector Oracle
+prices and position states from the Mock PerpDEX.
 
 ## Run
 
 ```sh
-cargo test                      # contract: 27 tests
+cargo test                      # contracts
 cd pricer && npm install
-npm test && npm run typecheck   # pricer: 16 tests
-npm run calibrate               # rebuild vol-table.json from Binance XLMUSDT history
+npm test && npm run typecheck   # pricer
+npm run calibrate -- XLM        # rebuild vol-tables/XLM.json from Coinbase history (also BTC,ETH)
 
-../scripts/deploy.sh local      # or testnet: keys, tUSDC asset, vault, 10,000 tUSDC pool, writes .dev.vars
-node scripts/e2e.ts             # drives the Worker API end to end against that deployment
-npx wrangler dev                # demo at http://localhost:8787
+../scripts/deploy.sh local      # or testnet: keys, 2-of-2 admin, tUSDC, mock PerpDEX, vault, 10,000 tUSDC pool, writes .dev.vars
+node scripts/e2e.ts             # drives the Worker API and keeper end to end against that deployment
+npx wrangler dev --test-scheduled   # demo at http://localhost:8787; GET /__scheduled runs the keeper once
+../scripts/admin.sh testnet propose --change '{"Perpdex":["C...",false]}'   # example only; admin calls need both signers
 ```
 
-`scripts/deploy.sh local` needs `stellar container start local --protocol-version 29` (Docker). Deploying the demo: copy `VAULT_ID` and `ASSET_ISSUER` from the deploy output into `pricer/wrangler.jsonc`, then `npx wrangler secret put PRICER_SECRET`, `npx wrangler secret put FAUCET_SECRET`, `npx wrangler deploy`.
+`scripts/deploy.sh local` needs `stellar container start local --protocol-version 29` (Docker); local uses `contracts/mock-oracle`, testnet uses Reflector `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63`.
+
+Deploying the demo: run `npx wrangler kv namespace create KV` and put its ID in `pricer/wrangler.jsonc`. Copy `VAULT_ID`, `PERPDEX_ID` and `ASSET_ISSUER` from the deployment output. Configure Cloudflare secrets `PRICER_SECRET`, `FAUCET_SECRET` and `KEEPER_SECRET`, then run `npx wrangler deploy`.
 
 ## Where this differs from the spec
 
 - **Signature** covers the quote's canonical XDR (the contract re-serializes the struct it decoded), not `sha256(Quote)`. Ed25519 hashes internally; re-serializing means extra or missing map keys can't change what was signed.
-- **Quote carries `vault`**, so a quote signed for one deployment can't be replayed on another that shares the pricer key. `perpdex` / `position_id` arrive with position binding in Instaward 3.
-- **`release`** frees a reservation with no payout. It is the stand-in for settlement until Instaward 2; callable by the admin or the protection's owner.
-- **Withdrawals**: `withdraw_request` is limited to free capital and one request at a time, so `reserved ≤ capital − locked` holds at every step; `withdraw_execute` pays out after 7 days.
-- **Concentration loading** is 1.0 until per-(asset, direction) reserves are tracked on-chain (Instaward 3). Utilization loading and the 5% margin apply.
-- **Prices** use 7 decimals. Reflector uses 14; the Instaward 2 oracle adapter must rescale.
+- **Quote carries `vault`**, so a quote signed for one deployment can't be replayed on another that shares the pricer key.
+- **One core contract.** Vault, book, quote check, oracle reads and governance live in one contract; the PerpDEX implements the position interface directly (`contracts/mock-perpdex` is the reference).
+- **Settlement TWAP** is rebuilt record by record with SEP-40 `price(asset, timestamp)`, so a late keeper still settles on the exact window while the oracle keeps history (about 18 hours on Reflector testnet).
+- **Position closed before activation** settles with zero payout; **position reduced below the protected quantity** settles the whole contract at the oracle price.
+- **Liquidity cap** is enforced by the pricer on max-payout exposure, not on-chain.
+- **Withdrawals**: `withdraw_request` is limited to free capital and one request at a time, so `reserved ≤ capital − locked` holds at every step; both are owner-only and `withdraw_execute` pays the owner (the PerpDEX) after 7 days.
+- **Prices** use 7 decimals everywhere in the contract; oracle prices are rescaled in one place (`oracle::to_7`).
 - **Test token** is `tUSDC`, a classic asset issued by the deploy script, with a faucet in the demo.
