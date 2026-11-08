@@ -575,6 +575,7 @@
 
     let me = null, data = null, current = null, timer = null;
     let lastPositionsSnapshot = null;
+    let lastProtectionsSnapshot = null;
     let refreshInProgress = false;
 
     function storageKey(type) {
@@ -781,10 +782,12 @@
         const isOpen = Number(position.status) === 0;
         const direction = Number(position.direction) === 0 ? "Long" : "Short";
         const tr = document.createElement("tr");
+        const positionValue = (BigInt(position.size) * BigInt(position.mark_price)) / 10000000n;
         const values = [
           String(id).slice(0, 10) + "…",
           position.asset,
           direction,
+          `≈ $${fmt(positionValue)}`,
           isOpen ? "Open" : Number(position.status) === 1 ? "Closed" : "Liquidated"
         ];
         for (const value of values) {
@@ -860,7 +863,44 @@
     }
     async function renderMine() {
       const container = $("mine");
+      const wallet = me;
+      const vault = data?.vault;
       const ids = myIds();
+      let protections;
+      try {
+        protections = await Promise.all(
+          ids.map(async (id) => {
+            const p = await api(`/api/protection?id=${encodeURIComponent(id)}`);
+            if (!p || p.rejected || p.error || p.status === undefined) {
+              throw new Error(`Invalid protection data: ${id}`);
+            }
+            return p;
+          })
+        );
+      } catch (error) {
+        console.warn("Protection refresh failed:", error);
+        return;
+      }
+      if (wallet !== me || vault !== data?.vault) return;
+      const now = Math.floor(Date.now() / 1000);
+      const snapshot = JSON.stringify({
+        wallet,
+        vault,
+        ids,
+        protections,
+        statuses: protections.map((p) =>
+          Number(p.status) === 1
+            ? "Settled"
+            : now < Number(p.t_active)
+              ? "Pending"
+              : "Active"
+        ),
+        canSettle: protections.map((p) =>
+          now >= Number(p.t_expire)
+        )
+      });
+      if (snapshot === lastProtectionsSnapshot) return;
+      lastProtectionsSnapshot = snapshot;
       container.replaceChildren();
       if (!ids.length) {
         const p = document.createElement("p");
@@ -888,16 +928,17 @@
       }
       thead.append(headerRow);
       const tbody = document.createElement("tbody");
-      for (const id of ids) {
-        const p = await api(`/api/protection?id=${encodeURIComponent(id)}`).catch(() => null);
-        if (!p) continue;
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const p = protections[i];
         const settled = Number(p.status) === 1;
-        const now = Math.floor(Date.now() / 1000);
         const expiresAt = Number(p.t_expire);
         const activeAt = Number(p.t_active);
-
-        const status = settled ? "Settled" : now < activeAt ? "Pending" : "Active";
-        const direction = Number(p.direction) === 0 ? "Long" : "Short";
+        const status = settled
+          ? "Settled"
+          : now < activeAt ? "Pending" : "Active";
+        const direction =
+          Number(p.direction) === 0 ? "Long" : "Short";
         const tr = document.createElement("tr");
         const values = [
           String(id),
@@ -926,9 +967,7 @@
                 id: String(id)
               }
             );
-            if (receipt) {
-              await renderMine();
-            }
+            if (receipt) await renderMine();
           });
           actionCell.append(button);
         }
@@ -958,7 +997,8 @@
         ["Premium → pool", `${fmt(t.premium)} USDC`],
         ["Protection fee → TOSBI", `${fmt(t.fee)} USDC`],
       ];
-      const table = document.createElement("table"); const body = document.createElement("tbody");
+      const table = document.createElement("table");
+      const body = document.createElement("tbody");
       for (const [k, v] of rows) {
         const tr = document.createElement("tr"); const th = document.createElement("th"); th.scope = "row"; th.textContent = k;
         const td = document.createElement("td"); td.textContent = v; tr.append(th, td); body.append(tr);
@@ -1004,6 +1044,8 @@
       if (net.networkPassphrase !== data.network) { $("banner").textContent = "Switch Freighter to Testnet, then connect again."; return; }
       if (me !== acc.address) {
         lastPositionsSnapshot = null;
+        lastProtectionsSnapshot = null;
+        $("mine").replaceChildren();
         $("positions").replaceChildren();
         $("protect-position").replaceChildren(
           new Option("Select an open position", "")
