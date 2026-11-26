@@ -96,6 +96,16 @@ test("vol shock pauses ≤ 1h covers and scales σ for longer ones", async () =>
   assert.equal((await makeQuote(req, deps({ shock: expired }))).breakdown.sigma, 1.0);
 });
 
+test("S-R6: the shock refusal names the asset and when short cover reopens", async () => {
+  const shock = async () => ({ factor: 2.5, until: 1_900 });
+  await assert.rejects(makeQuote({ ...req, duration: 3_600 }, deps({ shock })), (e: Error) => {
+    assert.ok(e instanceof Upstream);
+    assert.match(e.message, /XLM/);
+    assert.ok(e.message.includes("1970-01-01T00:31:40.000Z"), e.message);
+    return true;
+  });
+});
+
 test("no quote is signed when the chain read fails", async () => {
   await assert.rejects(makeQuote(req, deps({ position: async () => { throw new Error("rpc"); } })), Upstream);
   await assert.rejects(makeQuote(req, deps({ vaultState: async () => { throw new Error("rpc"); } })), Upstream);
