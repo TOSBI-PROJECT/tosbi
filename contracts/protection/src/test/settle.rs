@@ -312,3 +312,45 @@ fn st9_btc_scale_prices_pay_to_the_unit() {
     assert_eq!(t.c().settle(&id), 876_543_210);
     t.assert_invariant();
 }
+
+// S-E8: the window is complete except the record at expiry itself.
+#[test]
+fn st10_missing_expiry_record_waits_then_settles_degraded() {
+    let t = setup();
+    let (_, id) = bought(&t);
+    let end = NOW + DAY;
+    for k in 1..=5u64 {
+        t.feed("XLM", end - k * 300, 1_700_000);
+    }
+    t.env.ledger().set_timestamp(end + 60);
+    assert_eq!(t.c().try_settle(&id), Err(Ok(Error::OracleStale)));
+
+    t.env.ledger().set_timestamp(end + 7_200);
+    assert_eq!(t.c().settle(&id), 150 * USDC);
+    let degraded = Settled {
+        id,
+        price: 1_700_000,
+        payout: 150 * USDC,
+        early: false,
+        degraded: true,
+    };
+    let events = t.env.events().all().filter_by_contract(&t.id);
+    assert_eq!(events.events().last(), Some(&degraded.to_xdr(&t.env, &t.id)));
+}
+
+// S-E9: $0.19 → $0.155 is an 18% fall, above the 15% record cap, so the later records are dropped.
+#[test]
+fn st11_a_sustained_jump_above_the_cap_settles_on_pre_jump_records() {
+    let t = setup();
+    let (_, id) = bought(&t);
+    let end = NOW + DAY;
+    t.env.ledger().set_timestamp(end);
+    for k in 3..=5u64 {
+        t.feed("XLM", end - k * 300, 1_900_000);
+    }
+    for k in 0..=2u64 {
+        t.feed("XLM", end - k * 300, 1_550_000);
+    }
+    // TWAP $0.19: 5,000 XLM × $0.01 = 50 USDC, not the 225 USDC the $0.155 records would pay.
+    assert_eq!(t.c().settle(&id), 50 * USDC);
+}
