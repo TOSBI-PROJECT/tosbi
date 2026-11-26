@@ -1,0 +1,34 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+
+  pricer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pricer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: pricer/package-lock.json
+      - run: npm ci
+      # worker.ts imports vol-bundle.json, which is git-ignored; build it from the committed vol tables (no --post, no secrets).
+      - run: node scripts/publish-vol.ts
+      - run: npm test
+      - if: ${{ !cancelled() }}
+        run: npm run typecheck
